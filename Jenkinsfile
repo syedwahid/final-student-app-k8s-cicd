@@ -18,7 +18,7 @@ pipeline {
         KUBECONFIG = credentials('kube-config')
         
         // Git Configuration
-        GIT_URL = 'https://github.com/your-username/student-app-k8s.git'
+        GIT_URL = 'https://github.com/syedwahid/student-app-k8s-jenkins-cicd.git'
         GIT_BRANCH = 'main'
         
         // Build Configuration
@@ -33,7 +33,6 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
-        ansiColor('xterm')
     }
     
     parameters {
@@ -77,10 +76,6 @@ pipeline {
                         env.KUBE_NAMESPACE = 'student-app-staging'
                         env.APP_VERSION = "staging-${APP_VERSION}"
                     }
-                    
-                    // Write kubeconfig to file
-                    writeFile file: 'kubeconfig', text: KUBECONFIG
-                    sh 'chmod 600 kubeconfig'
                 }
             }
         }
@@ -230,6 +225,10 @@ pipeline {
                 script {
                     echo "🚀 Deploying to Kubernetes..."
                     
+                    // Write kubeconfig to file
+                    writeFile file: 'kubeconfig', text: KUBECONFIG
+                    sh 'chmod 600 kubeconfig'
+                    
                     withEnv(["KUBECONFIG=${WORKSPACE}/kubeconfig"]) {
                         // Create namespace if not exists
                         sh """
@@ -251,12 +250,6 @@ pipeline {
                             echo "🔄 Updating image tags..."
                             sed -i "s|student-backend:latest|${BACKEND_IMAGE}:${APP_VERSION}|g" k8s/backend/deployment.yaml
                             sed -i "s|student-frontend:latest|${FRONTEND_IMAGE}:${APP_VERSION}|g" k8s/frontend/deployment.yaml
-                            
-                            # Add imagePullSecrets if needed
-                            cat >> k8s/backend/deployment.yaml << 'EOF'
-      imagePullSecrets:
-      - name: docker-hub-secret
-EOF
                         """
                         
                         // Apply all Kubernetes manifests
@@ -306,50 +299,8 @@ EOF
                             echo "🧪 Testing backend health..."
                             BACKEND_POD=\$(kubectl get pods -n ${KUBE_NAMESPACE} -l app=backend -o jsonpath='{.items[0].metadata.name}')
                             kubectl exec -n ${KUBE_NAMESPACE} \$BACKEND_POD -- curl -s http://localhost:3000/api/health || echo "Backend health check failed"
-                            
-                            echo "🔗 Testing service connectivity..."
-                            kubectl run test-curl --image=curlimages/curl -n ${KUBE_NAMESPACE} --rm -i --restart=Never -- curl -s http://backend-service:3000/api/health || echo "Service connectivity test failed"
                         """
                     }
-                }
-            }
-        }
-        
-        stage('Integration Tests') {
-            steps {
-                script {
-                    echo "🧪 Running integration tests..."
-                    
-                    withEnv(["KUBECONFIG=${WORKSPACE}/kubeconfig"]) {
-                        sh """
-                            echo "🔗 Testing frontend-backend connection..."
-                            FRONTEND_POD=\$(kubectl get pods -n ${KUBE_NAMESPACE} -l app=frontend -o jsonpath='{.items[0].metadata.name}')
-                            kubectl exec -n ${KUBE_NAMESPACE} \$FRONTEND_POD -- curl -s http://backend-service:3000/api/health || echo "Frontend to backend connection test failed"
-                            
-                            echo "📝 Checking application logs..."
-                            kubectl logs -n ${KUBE_NAMESPACE} deployment/backend --tail=10
-                        """
-                    }
-                }
-            }
-        }
-        
-        stage('Cleanup') {
-            steps {
-                script {
-                    echo "🧹 Cleaning up..."
-                    
-                    // Remove Docker images
-                    sh """
-                        docker rmi ${BACKEND_IMAGE}:${APP_VERSION} || true
-                        docker rmi ${FRONTEND_IMAGE}:${APP_VERSION} || true
-                    """
-                    
-                    // Remove kubeconfig file
-                    sh "rm -f kubeconfig"
-                    
-                    // Archive artifacts if needed
-                    archiveArtifacts artifacts: '**/target/*.jar,**/dist/*', fingerprint: true
                 }
             }
         }
@@ -359,60 +310,11 @@ EOF
         success {
             script {
                 echo "✅ Pipeline completed successfully!"
-                
-                // Send notification
-                emailext(
-                    subject: "✅ Student App Deployment Successful - Build #${BUILD_NUMBER}",
-                    body: """
-                    Student Management App deployed successfully!
-                    
-                    Build Details:
-                    - Build Number: #${BUILD_NUMBER}
-                    - Environment: ${params.DEPLOY_ENVIRONMENT}
-                    - Git Commit: ${GIT_COMMIT_SHORT}
-                    - Author: ${GIT_AUTHOR}
-                    - Commit Message: ${GIT_MESSAGE}
-                    
-                    Application URLs:
-                    - Frontend: ${FRONTEND_URL}
-                    - Backend API: ${BACKEND_URL}/api/health
-                    
-                    Docker Images:
-                    - Backend: ${BACKEND_IMAGE}:${APP_VERSION}
-                    - Frontend: ${FRONTEND_IMAGE}:${APP_VERSION}
-                    
-                    To check deployment status:
-                    kubectl get all -n ${KUBE_NAMESPACE}
-                    """,
-                    to: 'dev-team@example.com',
-                    attachLog: true
-                )
             }
         }
         failure {
             script {
                 echo "❌ Pipeline failed!"
-                
-                // Send failure notification
-                emailext(
-                    subject: "❌ Student App Deployment Failed - Build #${BUILD_NUMBER}",
-                    body: """
-                    Student Management App deployment failed!
-                    
-                    Build Details:
-                    - Build Number: #${BUILD_NUMBER}
-                    - Environment: ${params.DEPLOY_ENVIRONMENT}
-                    - Git Commit: ${GIT_COMMIT_SHORT}
-                    
-                    Please check Jenkins logs for details:
-                    ${BUILD_URL}
-                    
-                    Last 50 lines of logs:
-                    ${currentBuild.rawBuild.getLog(50).join('\n')}
-                    """,
-                    to: 'dev-team@example.com',
-                    attachLog: true
-                )
             }
         }
         always {
