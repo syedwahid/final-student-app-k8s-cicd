@@ -21,8 +21,8 @@ pipeline {
                     sh '''
                         echo "1. Checking if KIND cluster exists..."
                         if ! kind get clusters | grep -q student-app; then
-                            echo "Creating KIND cluster using kind/kind-config-fixed.yaml..."
-                            kind create cluster --name student-app --config kind/kind-config-fixed.yaml
+                            echo "Creating KIND cluster using kind/kind-config.yaml..."
+                            kind create cluster --name student-app --config kind/kind-config.yaml
                         else
                             echo "✅ KIND cluster already exists"
                         fi
@@ -33,6 +33,11 @@ pipeline {
                         
                         echo "✅ Cluster ready"
                         kubectl get nodes
+                        # ADD THESE 3 LINES - Export kubeconfig for local use
+                        echo "3. Exporting kubeconfig for local kubectl access..."
+                        echo "To use kubectl locally after pipeline, run:"
+                        echo "kind export kubeconfig --name student-app"
+                        echo "Or: kind get kubeconfig --name student-app > ~/.kube/config"
                     '''
                 }
             }
@@ -159,6 +164,12 @@ pipeline {
             echo '🎉 CI/CD Pipeline completed successfully!'
             script {
                 currentBuild.description = "✅ Success - App deployed"
+
+                            // Add this message
+                echo '📋 To use kubectl locally after pipeline runs:'
+                echo '   1. Run: kind export kubeconfig --name student-app'
+                echo '   2. Then: kubectl get nodes'
+                echo '   3. Or: kubectl get pods -n student-app'
             }
         }
         failure {
