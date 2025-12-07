@@ -125,7 +125,7 @@ pipeline {
                         kind version || { echo "❌ KIND not installed"; exit 1; }
                         
                         echo "2. Creating KIND cluster configuration..."
-                        cat > /tmp/kind-config.yaml << 'EOF'
+                        cat > /tmp/kind-config.yaml << 'KIND_EOF'
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -139,7 +139,7 @@ nodes:
     hostPort: 31349
     listenAddress: "0.0.0.0"
     protocol: tcp
-EOF
+KIND_EOF
                         
                         echo "3. Creating/Checking KIND cluster..."
                         if ! kind get clusters | grep -q student-app; then
@@ -156,8 +156,8 @@ EOF
                         
                         echo "5. Setting up kubeconfig for Jenkins..."
                         mkdir -p /var/lib/jenkins/.kube
-                        kind get kubeconfig --name student-app | \
-                            sed 's|server: https://.*:.*|server: https://127.0.0.1:6443|' | \
+                        kind get kubeconfig --name student-app | \\
+                            sed 's|server: https://.*:.*|server: https://127.0.0.1:6443|' | \\
                             tee /var/lib/jenkins/.kube/config
                         chmod 600 /var/lib/jenkins/.kube/config
                         
@@ -299,7 +299,7 @@ EOF
                         sed -i "s|image:.*student-frontend.*|image: ${FRONTEND_IMAGE}:latest|g" k8s/frontend/deployment.yaml
                         
                         # Add KIND-specific environment variables
-                        cat >> k8s/backend/deployment.yaml << 'EOF'
+                        cat >> k8s/backend/deployment.yaml << 'DEPLOY_EOF'
         env:
         - name: USE_MYSQL
           value: "false"
@@ -307,11 +307,11 @@ EOF
           value: "3000"
         - name: NODE_ENV
           value: "production"
-EOF
+DEPLOY_EOF
                         
                         echo "3. Creating KIND-optimized manifests..."
                         # Create simplified service files if needed
-                        cat > k8s/backend/service-kind.yaml << 'EOF'
+                        cat > k8s/backend/service-kind.yaml << 'SERVICE_EOF'
 apiVersion: v1
 kind: Service
 metadata:
@@ -325,9 +325,9 @@ spec:
   - port: 3000
     targetPort: 3000
     nodePort: 30001
-EOF
+SERVICE_EOF
                         
-                        cat > k8s/frontend/service-kind.yaml << 'EOF'
+                        cat > k8s/frontend/service-kind.yaml << 'SERVICE_EOF'
 apiVersion: v1
 kind: Service
 metadata:
@@ -341,7 +341,7 @@ spec:
   - port: 80
     targetPort: 80
     nodePort: 31349
-EOF
+SERVICE_EOF
                         
                         echo "✅ Manifests prepared for KIND"
                     '''
@@ -403,10 +403,6 @@ EOF
                         echo ""
                         echo "🌐 Services:"
                         kubectl get svc -n ${KUBE_NAMESPACE}
-                        
-                        echo ""
-                        echo "📝 Pod Conditions:"
-                        kubectl describe pods -n ${KUBE_NAMESPACE} | grep -A5 "Conditions:" || echo "Could not get pod conditions"
                     '''
                 }
             }
@@ -420,7 +416,7 @@ EOF
                     sh '''
                         echo "1. Testing Backend Health..."
                         echo "API Health Check:"
-                        curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:30001/api/health || echo "Backend not responding"
+                        curl -s -o /dev/null -w "HTTP Status: %{http_code}\\n" http://localhost:30001/api/health || echo "Backend not responding"
                         
                         echo ""
                         echo "2. Testing Backend API..."
@@ -430,7 +426,7 @@ EOF
                         
                         echo ""
                         echo "3. Testing Students API..."
-                        curl -s http://localhost:30001/api/students | python3 -m json.tool 2>/dev/null | head -20 || \
+                        curl -s http://localhost:30001/api/students | python3 -m json.tool 2>/dev/null | head -20 || \\
                         curl -s http://localhost:30001/api/students | head -100
                         
                         echo ""
@@ -441,7 +437,7 @@ EOF
                         
                         echo ""
                         echo "5. Testing Service Connectivity..."
-                        kubectl run test-curl --image=curlimages/curl -n ${KUBE_NAMESPACE} --rm -i --restart=Never -- \
+                        kubectl run test-curl --image=curlimages/curl -n ${KUBE_NAMESPACE} --rm -i --restart=Never -- \\
                             timeout 10s curl -s http://backend-service:3000/api/health || echo "Internal service test completed"
                         
                         echo ""
@@ -490,7 +486,7 @@ EOF
                     
                     sh '''
                         echo "1. Generating deployment report..."
-                        cat > ${WORKSPACE}/artifacts/deployment-report.md << 'EOF'
+                        cat > ${WORKSPACE}/artifacts/deployment-report.md << 'REPORT_EOF'
 # Student Management System - Deployment Report
 
 ## Deployment Information
