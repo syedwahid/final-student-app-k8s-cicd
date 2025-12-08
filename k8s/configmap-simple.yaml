@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: backend-config
-  namespace: student-app
-data:
-  NODE_ENV: "production"
-  PORT: "3000"
