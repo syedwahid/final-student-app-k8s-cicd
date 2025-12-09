@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout
+    - name: Checkout code
       uses: actions/checkout@v3
     
-    - name: Auth to GCP
+    - name: Setup GCP Authentication
       uses: google-github-actions/auth@v1
       with:
         credentials_json: '${{ secrets.GCP_SA_KEY }}'
@@ -20,32 +20,47 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
     
-    - name: Import or Create Infrastructure
+    - name: Deploy Infrastructure
       working-directory: ./terraform/gcp
       run: |
-        # Initialize
+        # Initialize Terraform
         terraform init
         
-        # Try to import existing resources
-        echo "Importing existing resources if they exist..."
+        # Create configuration file
+        cat > terraform.tfvars << 'EOF'
+        gcp_project = "student-app-1765219404"
+        gcp_region  = "us-central1"
+        gcp_zone    = "us-central1-a"
+        vm_name     = "student-app-vm"
+        vm_type     = "e2-medium"
+        vm_image    = "ubuntu-2204-lts"
+        disk_size   = 20
+        EOF
         
-        # VM
-        terraform import google_compute_instance.student_app_vm \
-          projects/student-app-1765219404/zones/us-central1-a/instances/student-app-vm 2>/dev/null \
-          || echo "VM will be created"
+        echo "Configuration file created:"
+        cat terraform.tfvars
         
-        # Firewall
-        terraform import google_compute_firewall.allow_web \
-          projects/student-app-1765219404/global/firewalls/allow-student-app-ports 2>/dev/null \
-          || echo "Firewall will be created"
+        # Deploy
+        echo "Applying Terraform configuration..."
+        terraform apply -auto-approve
+    
+    - name: Display Results
+      working-directory: ./terraform/gcp
+      run: |
+        echo "## 🎉 Deployment Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
         
-        # Static IP
-        terraform import google_compute_address.static_ip \
-          projects/student-app-1765219404/regions/us-central1/addresses/student-app-vm-ip 2>/dev/null \
-          || echo "Static IP will be created"
+        # Check if Terraform has outputs
+        if terraform output vm_public_ip >/dev/null 2>&1; then
+          VM_IP=$(terraform output -raw vm_public_ip)
+          echo "**✅ VM IP:** $VM_IP" >> $GITHUB_STEP_SUMMARY
+          echo "**🌐 Frontend:** http://$VM_IP:31349" >> $GITHUB_STEP_SUMMARY
+          echo "**🔗 Backend:** http://$VM_IP:30001/api/health" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**⚠️  Note:** Resources may already exist or deployment had issues." >> $GITHUB_STEP_SUMMARY
+          echo "Check GCP Console for existing VM." >> $GITHUB_STEP_SUMMARY
+        fi
         
-        # Apply (creates if doesn't exist, updates if exists)
-        terraform apply -auto-approve \
-          -var="gcp_project=student-app-1765219404" \
-          -var="gcp_region=us-central1" \
-          -var="gcp_zone=us-central1-a"
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Project:** student-app-1765219404" >> $GITHUB_STEP_SUMMARY
+        echo "**Status:** Infrastructure deployment completed" >> $GITHUB_STEP_SUMMARY
