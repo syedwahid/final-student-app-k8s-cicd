@@ -40,9 +40,30 @@ jobs:
         echo "✅ Configuration created"
         cat terraform.tfvars
         
-        # Clean up existing resources first
-        echo "🧹 Cleaning up existing resources..."
-        terraform destroy -auto-approve || echo "No existing resources to destroy or destroy failed, continuing..."
+        # First, import existing resources to state if they exist
+        echo "🔄 Checking for existing resources..."
+        
+        # Try to destroy first (this will fail if state is empty)
+        terraform destroy -auto-approve || true
+        
+        # If destroy failed due to missing state, use gcloud CLI to delete resources directly
+        echo "🧹 Forcing removal of conflicting resources via gcloud..."
+        
+        # Delete firewall rule if exists
+        gcloud compute firewall-rules delete allow-student-app-ports --quiet --project=student-app-1765219404 2>/dev/null || echo "Firewall rule not found or already deleted"
+        
+        # Delete static IP if exists
+        gcloud compute addresses delete student-app-vm-ip --region=us-central1 --quiet --project=student-app-1765219404 2>/dev/null || echo "Static IP not found or already deleted"
+        
+        # Delete VM if exists
+        gcloud compute instances delete student-app-vm --zone=us-central1-a --quiet --project=student-app-1765219404 2>/dev/null || echo "VM not found or already deleted"
+        
+        # Wait a moment for resources to be fully deleted
+        sleep 10
+        
+        # Initialize fresh state
+        echo "🔄 Re-initializing Terraform..."
+        terraform init -reconfigure
         
         # Apply new infrastructure
         echo "🚀 Applying Terraform..."
