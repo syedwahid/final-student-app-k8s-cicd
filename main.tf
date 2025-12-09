@@ -29,30 +29,21 @@ resource "google_compute_instance" "student_app_vm" {
   network_interface {
     network = "default"
     access_config {
-      // Ephemeral public IP
+      # Ephemeral public IP
     }
   }
 
-  # Metadata for SSH
-  metadata = {
-    # ssh-keys removed for GitHub Actions
-  }
-
-  # Startup script to install required tools
-  metadata_startup_script = <<-EOF
+  # Startup script - NO SSH KEY REFERENCE
+  metadata_startup_script = <<-EOT
     #!/bin/bash
     
-    # Update and install basic tools
+    # Update and install Docker
     apt-get update
-    apt-get install -y \
-      docker.io \
-      docker-compose \
-      git \
-      curl \
-      wget \
-      unzip \
-      gnupg \
-      lsb-release
+    apt-get install -y docker.io
+    
+    # Start Docker
+    systemctl enable docker
+    systemctl start docker
     
     # Install kubectl
     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -63,19 +54,15 @@ resource "google_compute_instance" "student_app_vm" {
     chmod +x ./kind
     mv ./kind /usr/local/bin/kind
     
-    # Add ubuntu user to docker group
-    usermod -aG docker ubuntu
-    
-    # Configure Docker to start on boot
-    systemctl enable docker
-    systemctl start docker
-    
-    # Create application directory
+    # Create app directory
     mkdir -p /opt/student-app
-    chown -R ubuntu:ubuntu /opt/student-app
     
-    echo "VM setup completed at $(date)" >> /var/log/startup.log
-  EOF
+    # Run test services
+    docker run -d -p 3000:3000 --name test-backend node:18-alpine node -e "require('http').createServer((req, res) => { res.end('Backend API Running') }).listen(3000)"
+    docker run -d -p 80:80 --name test-frontend nginx
+    
+    echo "VM setup completed!" >> /var/log/startup.log
+  EOT
 
   tags = ["http-server", "https-server", "student-app"]
 
@@ -84,7 +71,7 @@ resource "google_compute_instance" "student_app_vm" {
   }
 }
 
-# Firewall rules for application ports
+# Firewall rules
 resource "google_compute_firewall" "allow_web" {
   name    = "allow-student-app-ports"
   network = "default"
@@ -98,23 +85,29 @@ resource "google_compute_firewall" "allow_web" {
   target_tags   = ["student-app"]
 }
 
-# Static IP for the VM
+# Static IP
 resource "google_compute_address" "static_ip" {
   name   = "${var.vm_name}-ip"
   region = var.gcp_region
 }
 
+# Outputs
 output "vm_public_ip" {
-  value = google_compute_address.static_ip.address
+  value       = google_compute_address.static_ip.address
   description = "Public IP address of the VM"
 }
 
-output "vm_name" {
-  value = google_compute_instance.student_app_vm.name
-  description = "Name of the VM instance"
+output "frontend_url" {
+  value       = "http://${google_compute_address.static_ip.address}:31349"
+  description = "Frontend URL"
 }
 
-output "ssh_command" {
-  value = "ssh -i ${var.ssh_private_key_path} ubuntu@${google_compute_address.static_ip.address}"
-  description = "SSH command to connect to the VM"
+output "backend_url" {
+  value       = "http://${google_compute_address.static_ip.address}:30001/api/health"
+  description = "Backend API URL"
+}
+
+output "ssh_note" {
+  value       = "Add SSH key via GCP Console: Compute Engine > Metadata > SSH Keys"
+  description = "SSH access note"
 }

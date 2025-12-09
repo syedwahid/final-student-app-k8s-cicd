@@ -1,58 +1,44 @@
-name: Deploy to GCP VM
+name: Deploy Student App
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
-  terraform-apply:
-    name: Terraform Apply
+  deploy:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout Repository
+    - name: Checkout
       uses: actions/checkout@v3
     
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-    
-    - name: Setup GCP Credentials
+    - name: Auth to GCP
       uses: google-github-actions/auth@v1
       with:
         credentials_json: '${{ secrets.GCP_SA_KEY }}'
     
-    - name: Setup GCloud CLI
-      uses: google-github-actions/setup-gcloud@v1
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
     
-    - name: Enable Required APIs
+    - name: Enable APIs
       run: |
         gcloud services enable compute.googleapis.com \
           cloudresourcemanager.googleapis.com \
-          --project="${{ secrets.GCP_PROJECT_ID }}" --quiet
+          --project="student-app-1765219404" --quiet
         sleep 30
     
-    - name: Terraform Apply with Variables
+    - name: Deploy VM
       working-directory: ./terraform/gcp
       run: |
         terraform init
         
-        # Apply with ALL variables explicitly
+        # Deploy without SSH key
         terraform apply -auto-approve \
-          -var="gcp_project=${{ secrets.GCP_PROJECT_ID }}" \
+          -var="gcp_project=student-app-1765219404" \
           -var="gcp_region=us-central1" \
           -var="gcp_zone=us-central1-a" \
-          -var="vm_name=student-app-vm" \
-          -var="vm_type=e2-medium" \
-          -var="disk_size=20"
-    
-    - name: Get VM IP
-      id: get-ip
-      working-directory: ./terraform/gcp
-      run: |
-        VM_IP=$(terraform output -raw vm_public_ip)
-        echo "vm_ip=$VM_IP" >> $GITHUB_OUTPUT
-        echo "✅ VM Public IP: $VM_IP"
-    
-    outputs:
-      vm_ip: ${{ steps.get-ip.outputs.vm_ip }}
+          -var="vm_name=student-app-vm"
+        
+        echo "✅ VM deployed at: $(terraform output -raw vm_public_ip)"
+        echo "🌐 Frontend: http://$(terraform output -raw vm_public_ip):31349"
+        echo "🔗 Backend: http://$(terraform output -raw vm_public_ip):30001/api/health"
