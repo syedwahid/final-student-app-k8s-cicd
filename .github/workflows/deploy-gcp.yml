@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout
+    - name: Checkout code
       uses: actions/checkout@v3
     
-    - name: Auth to GCP
+    - name: Setup GCP Authentication
       uses: google-github-actions/auth@v1
       with:
         credentials_json: '${{ secrets.GCP_SA_KEY }}'
@@ -20,23 +20,43 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
     
-    - name: Deploy VM
+    - name: Deploy Infrastructure
       working-directory: ./terraform/gcp
       run: |
+        # Initialize Terraform
         terraform init
         
-        # Create terraform.tfvars file
+        # Create terraform.tfvars with ALL variables
         cat > terraform.tfvars << 'EOF'
         gcp_project = "student-app-1765219404"
         gcp_region  = "us-central1"
         gcp_zone    = "us-central1-a"
         vm_name     = "student-app-vm"
+        vm_type     = "e2-medium"
+        vm_image    = "ubuntu-2204-lts"
+        disk_size   = 20
         EOF
         
-        # Apply
+        echo "✅ Configuration created"
+        cat terraform.tfvars
+        
+        # Just apply - Terraform will handle existing resources
+        echo "🚀 Applying Terraform..."
         terraform apply -auto-approve
     
-    - name: Show VM IP
+    - name: Display Results
       working-directory: ./terraform/gcp
       run: |
-        echo "VM IP: $(terraform output -raw vm_public_ip)"
+        echo "## 🎉 Deployment Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Try to get IP
+        if terraform output vm_public_ip >/dev/null 2>&1; then
+          VM_IP=$(terraform output -raw vm_public_ip)
+          echo "**✅ VM IP:** $VM_IP" >> $GITHUB_STEP_SUMMARY
+          echo "**🌐 Frontend:** http://$VM_IP:31349" >> $GITHUB_STEP_SUMMARY
+          echo "**🔗 Backend:** http://$VM_IP:30001/api/health" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**ℹ️ Status:** Infrastructure deployment completed" >> $GITHUB_STEP_SUMMARY
+          echo "Check GCP Console for VM details." >> $GITHUB_STEP_SUMMARY
+        fi
