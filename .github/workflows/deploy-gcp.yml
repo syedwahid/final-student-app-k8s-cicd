@@ -20,25 +20,68 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
     
-    - name: Enable APIs
+    - name: Check if VM exists
+      id: check-vm
       run: |
-        gcloud services enable compute.googleapis.com \
-          cloudresourcemanager.googleapis.com \
-          --project="student-app-1765219404" --quiet
-        sleep 30
+        if gcloud compute instances describe student-app-vm \
+          --zone=us-central1-a \
+          --project=student-app-1765219404 2>/dev/null; then
+          echo "vm_exists=true" >> $GITHUB_OUTPUT
+          echo "✅ VM already exists"
+        else
+          echo "vm_exists=false" >> $GITHUB_OUTPUT
+          echo "🆕 VM doesn't exist, will create"
+        fi
     
-    - name: Deploy VM
+    - name: Terraform Init
+      working-directory: ./terraform/gcp
+      run: terraform init
+    
+    - name: Terraform Plan
+      working-directory: ./terraform/gcp
+      run: terraform plan \
+        -var="gcp_project=student-app-1765219404" \
+        -var="gcp_region=us-central1" \
+        -var="gcp_zone=us-central1-a"
+    
+    - name: Terraform Apply (Skip if exists)
+      if: steps.check-vm.outputs.vm_exists == 'false'
       working-directory: ./terraform/gcp
       run: |
-        terraform init
-        
-        # Deploy without SSH key
         terraform apply -auto-approve \
           -var="gcp_project=student-app-1765219404" \
           -var="gcp_region=us-central1" \
-          -var="gcp_zone=us-central1-a" \
-          -var="vm_name=student-app-vm"
+          -var="gcp_zone=us-central1-a"
+    
+    - name: Get VM Info (if exists)
+      if: steps.check-vm.outputs.vm_exists == 'true'
+      run: |
+        VM_IP=$(gcloud compute instances describe student-app-vm \
+          --zone=us-central1-a \
+          --project=student-app-1765219404 \
+          --format="value(networkInterfaces[0].accessConfig[0].natIP)")
+        echo "✅ VM already exists at: $VM_IP"
+        echo "🌐 Frontend: http://$VM_IP:31349"
+        echo "🔗 Backend: http://$VM_IP:30001/api/health"
+    
+    - name: Import existing resources to Terraform state
+      if: steps.check-vm.outputs.vm_exists == 'true'
+      working-directory: ./terraform/gcp
+      run: |
+        # Import existing VM
+        terraform import google_compute_instance.student_app_vm projects/student-app-1765219404/zones/us-central1-a/instances/student-app-vm || echo "VM already in state"
         
-        echo "✅ VM deployed at: $(terraform output -raw vm_public_ip)"
-        echo "🌐 Frontend: http://$(terraform output -raw vm_public_ip):31349"
-        echo "🔗 Backend: http://$(terraform output -raw vm_public_ip):30001/api/health"
+        # Import existing firewall
+        terraform import google_compute_firewall.allow_web projects/student-app-1765219404/global/firewalls/allow-student-app-ports || echo "Firewall already in state"
+        
+        # Import existing static IP
+        terraform import google_compute_address.static_ip projects/student-app-1765219404/regions/us-central1/addresses/student-app-vm-ip || echo "IP already in state"
+    
+    - name: Terraform Apply (Update if needed)
+      if: steps.check-vm.outputs.vm_exists == 'true'
+      working-directory: ./terraform/gcp
+      run: |
+        terraform apply -auto-approve \
+          -var="gcp_project=student-app-1765219404" \
+          -var="gcp_region=us-central1" \
+          -var="gcp_zone=us-central1-a"
