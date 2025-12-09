@@ -40,7 +40,11 @@ jobs:
         echo "✅ Configuration created"
         cat terraform.tfvars
         
-        # Just apply - Terraform will handle existing resources
+        # Clean up existing resources first
+        echo "🧹 Cleaning up existing resources..."
+        terraform destroy -auto-approve || echo "No existing resources to destroy or destroy failed, continuing..."
+        
+        # Apply new infrastructure
         echo "🚀 Applying Terraform..."
         terraform apply -auto-approve
     
